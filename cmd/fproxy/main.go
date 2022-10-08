@@ -10,6 +10,9 @@ import (
 )
 
 func main() {
-	p := fproxy.NewProxy(fproxy.Config{})
+	p := fproxy.NewProxy(fproxy.Config{
+		URLTransform:   fproxy.URLTransformPrefix("https", "share.myl.moe", "", false),
+		URLToLocalPath: fproxy.URLToLocalPathPrefix("cache"),
+	})
 	http.ListenAndServe(":8000", p)
 }
