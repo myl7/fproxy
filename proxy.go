@@ -4,12 +4,14 @@
 package fproxy
 
 import (
+	"bufio"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -34,27 +36,50 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	_, ok = req.Header["Range"]
-	if ok {
-		p.forwardRangeGet(w, req, u)
-		return
+	var isRangeReq bool
+	var rangeStart int64
+	rangeFields, isRangeReq := req.Header["Range"]
+	if isRangeReq {
+		m := regexp.MustCompile(`^bytes=(\d+)-\d*$`).FindStringSubmatch(rangeFields[0])
+		if m == nil {
+			http.Error(w, "", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+
+		var err error
+		rangeStart, err = strconv.ParseInt(m[1], 10, 64)
+		if err != nil {
+			panic(err)
+		}
+
+		// http.Error(w, "Unimplemented", http.StatusInternalServerError)
+		// return
 	}
 
-	p.forwardGet(w, req, u)
-}
+	subReq, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		panic(err)
+	}
 
-func (p *Proxy) forwardGet(w http.ResponseWriter, req *http.Request, u url.URL) {
-	resp, err := http.Get(u.String())
+	if isRangeReq {
+		subReq.Header.Add("Range", rangeFields[0])
+	}
+
+	resp, err := http.DefaultClient.Do(subReq)
 	if err != nil {
 		http.Error(w, "", http.StatusInternalServerError)
-		log.Print(err)
 		return
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	isRangeResp := resp.StatusCode == http.StatusPartialContent
+
+	if !isRangeResp && resp.StatusCode != http.StatusOK {
 		w.WriteHeader(resp.StatusCode)
-		io.Copy(w, resp.Body)
+		_, err := io.Copy(w, resp.Body)
+		if err != nil {
+			panic(err)
+		}
 		return
 	}
 
@@ -62,25 +87,30 @@ func (p *Proxy) forwardGet(w http.ResponseWriter, req *http.Request, u url.URL) 
 	fpDir := path.Dir(fp)
 	err = os.MkdirAll(fpDir, 0777)
 	if err != nil {
-		http.Error(w, "", http.StatusInternalServerError)
-		log.Print(err)
-		return
+		panic(err)
 	}
 
 	f, err := os.Create(fp)
 	if err != nil {
-		http.Error(w, "", http.StatusInternalServerError)
-		log.Print(err)
-		return
+		panic(err)
 	}
 	defer f.Close()
 
-	rd := io.TeeReader(resp.Body, f)
-	io.Copy(w, rd)
-}
+	f.Seek(rangeStart, io.SeekStart)
 
-func (p *Proxy) forwardRangeGet(w http.ResponseWriter, req *http.Request, u url.URL) {
-	http.Error(w, "Unimplemented", http.StatusInternalServerError)
+	bufF := bufio.NewWriter(f)
+	defer bufF.Flush()
+
+	rd := io.TeeReader(resp.Body, bufF)
+	n, err := io.Copy(w, rd)
+	if err != nil {
+		panic(err)
+	}
+
+	if isRangeResp {
+		// TODO: Save n
+		n += 1
+	}
 }
 
 type Config struct {
