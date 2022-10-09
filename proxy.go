@@ -101,6 +101,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	bufF := bufio.NewWriter(f)
 	defer bufF.Flush()
 
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+
+	// TODO: Handle header only
+
 	rd := io.TeeReader(resp.Body, bufF)
 	n, err := io.Copy(w, rd)
 	if err != nil {
