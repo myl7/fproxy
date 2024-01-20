@@ -1,0 +1,8 @@
+Package: fproxy
+Version: 0.2.0
+Priority: optional
+Section: net
+Maintainer: myl7 <myl@myl.moe>
+Architecture: amd64
+Description: fproxy
+Homepage: https://github.com/myl7/fproxy

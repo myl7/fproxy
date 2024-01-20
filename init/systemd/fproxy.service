@@ -1,0 +1,7 @@
+[Unit]
+Description=fproxy
+
+[Service]
+EnvironmentFile=-/etc/default/fproxy
+ExecStart=/usr/local/bin/fproxy $FLAGS
+User=fproxy
